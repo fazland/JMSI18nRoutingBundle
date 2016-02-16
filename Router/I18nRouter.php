@@ -21,8 +21,6 @@ namespace JMS\I18nRoutingBundle\Router;
 use JMS\I18nRoutingBundle\Exception\NotAcceptableLanguageException;
 
 use Symfony\Component\Routing\Matcher\RequestMatcherInterface;
-use Symfony\Component\Routing\RequestContext;
-use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Bundle\FrameworkBundle\Routing\Router;
 use Symfony\Component\Routing\Exception\RouteNotFoundException;
 use Symfony\Component\Routing\Exception\ResourceNotFoundException;
@@ -36,11 +34,12 @@ use Symfony\Component\HttpFoundation\Request;
 class I18nRouter extends Router
 {
     private $hostMap = array();
-    private $i18nLoaderId;
+    private $i18nLoader;
     private $container;
     private $defaultLocale;
     private $redirectToHost = true;
     private $localeResolver;
+    private $locales;
 
     /**
      * Constructor.
@@ -84,14 +83,19 @@ class I18nRouter extends Router
         $this->hostMap = $hostMap;
     }
 
-    public function setI18nLoaderId($id)
+    public function setI18nLoader(I18nLoader $loader)
     {
-        $this->i18nLoaderId = $id;
+        $this->i18nLoader = $loader;
     }
 
     public function setDefaultLocale($locale)
     {
         $this->defaultLocale = $locale;
+    }
+
+    public function setLocales(array $locales)
+    {
+        $this->locales = $locales;
     }
 
     /**
@@ -156,7 +160,7 @@ class I18nRouter extends Router
     {
         $collection = parent::getRouteCollection();
 
-        return $this->container->get($this->i18nLoaderId)->load($collection);
+        return $this->i18nLoader->load($collection);
     }
 
     public function getOriginalRouteCollection()
@@ -192,17 +196,17 @@ class I18nRouter extends Router
                 $params['_route'] = substr($params['_route'], $pos + strlen(I18nLoader::ROUTING_PREFIX));
             }
 
-            if (!($currentLocale = $this->context->getParameter('_locale'))
-                    && null !== $request) {
-                $currentLocale = $this->localeResolver->resolveLocale(
-                    $request, $params['_locales']
-                );
+            $currentLocale = null;
+            if (null !== $request) {
+                $currentLocale = $this->localeResolver->resolveLocale($request, $params['_locales']);
+            } else {
+                $currentLocale = $this->context->getParameter('_locale');
+            }
 
-                // If the locale resolver was not able to determine a locale, then all efforts to
-                // make an informed decision have failed. Just display something as a last resort.
-                if (!$currentLocale) {
-                    $currentLocale = reset($params['_locales']);
-                }
+            // If the locale resolver was not able to determine a locale, then all efforts to
+            // make an informed decision have failed. Just display something as a last resort.
+            if (!$currentLocale) {
+                $currentLocale = reset($params['_locales']);
             }
 
             if (!in_array($currentLocale, $params['_locales'], true)) {
@@ -267,9 +271,7 @@ class I18nRouter extends Router
         // if we don't do this all _internal routes will have the default locale on first request
         if (!isset($params['_locale'])
                 && null !== $request
-                && $locale = $this->localeResolver->resolveLocale(
-                        $request,
-                        $this->container->getParameter('jms_i18n_routing.locales'))) {
+                && $locale = $this->localeResolver->resolveLocale($request, $this->locales)) {
             $params['_locale'] = $locale;
         }
 
